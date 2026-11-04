@@ -1276,6 +1276,70 @@ func TestDataSourceProxy_LokiRouteAccessControl(t *testing.T) {
 	}
 }
 
+// Seal: CVE-2026-9703 adds DS_LOKI to the trailing non-allow-listed write check, so the
+// routes shipped in the Loki plugin.json must keep Grafana's own Loki ruler calls working
+// (ngalert LotexRuler proxies POST/DELETE to api/prom/rules) for users holding
+// alert.rules.external:write, and still reject them for everyone else.
+func TestDataSourceProxy_LokiPluginJSONRoutes(t *testing.T) {
+	const (
+		dsUID       = "dsUID"
+		dsScope     = "datasources:uid:" + dsUID
+		readAction  = "alert.rules.external:read"
+		writeAction = "alert.rules.external:write"
+	)
+
+	raw, err := os.ReadFile("../../../public/app/plugins/datasource/loki/plugin.json")
+	require.NoError(t, err)
+	var pluginJSON struct {
+		Routes []*plugins.Route `json:"routes"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &pluginJSON))
+	require.NotEmpty(t, pluginJSON.Routes)
+
+	for _, tc := range []struct {
+		name        string
+		method      string
+		path        string
+		permissions map[string][]string
+		wantErr     string
+	}{
+		{name: "ruler create allowed with write", method: http.MethodPost, path: "api/prom/rules/ns1", permissions: map[string][]string{writeAction: {dsScope}}},
+		{name: "ruler delete allowed with write", method: http.MethodDelete, path: "api/prom/rules/ns1/group1", permissions: map[string][]string{writeAction: {dsScope}}},
+		{name: "loki ruler API create allowed with write", method: http.MethodPost, path: "loki/api/v1/rules/ns1", permissions: map[string][]string{writeAction: {dsScope}}},
+		{name: "ruler read allowed with read", method: http.MethodGet, path: "api/prom/rules", permissions: map[string][]string{readAction: {dsScope}}},
+		{name: "ruler create denied with read only", method: http.MethodPost, path: "api/prom/rules/ns1", permissions: map[string][]string{readAction: {dsScope}}, wantErr: errPluginProxyRouteAccessDenied.Error()},
+		{name: "ruler delete denied without permissions", method: http.MethodDelete, path: "api/prom/rules/ns1/group1", permissions: map[string][]string{}, wantErr: errPluginProxyRouteAccessDenied.Error()},
+		{name: "non allow-listed write denied", method: http.MethodPost, path: "api/v1/push", permissions: map[string][]string{writeAction: {dsScope}}, wantErr: "non allow-listed POSTs not allowed on proxied Prometheus or Loki datasource"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req, err := http.NewRequest(tc.method, "http://localhost/"+tc.path, nil)
+			require.NoError(t, err)
+
+			ctx := &contextmodel.ReqContext{
+				Context: &web.Context{Req: req},
+				SignedInUser: &user.SignedInUser{
+					OrgID:       1,
+					OrgRole:     identity.RoleNone,
+					Permissions: map[int64]map[string][]string{1: tc.permissions},
+				},
+			}
+			ds := &datasources.DataSource{UID: dsUID, Type: datasources.DS_LOKI, URL: "http://loki:3100"}
+
+			proxy, err := setupDSProxyTest(t, ctx, ds, pluginJSON.Routes, tc.path)
+			require.NoError(t, err)
+
+			err = proxy.validateRequest()
+			if tc.wantErr != "" {
+				require.Error(t, err)
+				require.Equal(t, tc.wantErr, err.Error())
+				return
+			}
+			require.NoError(t, err)
+			require.NotNil(t, proxy.matchedRoute)
+		})
+	}
+}
+
 func setupDSProxyTest(t *testing.T, ctx *contextmodel.ReqContext, ds *datasources.DataSource, routes []*plugins.Route, path string, opts ...func(proxy *DataSourceProxy)) (*DataSourceProxy, error) {
 	t.Helper()
 
