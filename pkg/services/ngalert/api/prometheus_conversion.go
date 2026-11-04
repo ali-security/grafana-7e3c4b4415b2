@@ -1,7 +1,10 @@
 package api
 
 import (
+	"errors"
+	"fmt"
 	"io"
+	"net/http"
 
 	"gopkg.in/yaml.v3"
 
@@ -9,6 +12,27 @@ import (
 	contextmodel "github.com/grafana/grafana/pkg/services/contexthandler/model"
 	apimodels "github.com/grafana/grafana/pkg/services/ngalert/api/tooling/definitions"
 )
+
+// maxConvertPrometheusRequestBodyBytes caps POST bodies of the Prometheus rule
+// conversion API (CVE-2026-33374). Upstream makes the limit configurable via
+// [unified_alerting.prometheus_conversion] max_request_body_bytes with this default.
+const maxConvertPrometheusRequestBodyBytes int64 = 52428800 // 50 MiB
+
+// readConvertPrometheusBody reads the request body, limited to maxBodyBytes when greater than 0.
+func readConvertPrometheusBody(ctx *contextmodel.ReqContext, maxBodyBytes int64) ([]byte, error) {
+	if maxBodyBytes > 0 {
+		ctx.Req.Body = http.MaxBytesReader(ctx.Resp, ctx.Req.Body, maxBodyBytes)
+	}
+	body, err := io.ReadAll(ctx.Req.Body)
+	if err != nil {
+		var maxBytesError *http.MaxBytesError
+		if errors.As(err, &maxBytesError) {
+			return nil, fmt.Errorf("request body too large: max size %d bytes: %w", maxBodyBytes, err)
+		}
+		return nil, err
+	}
+	return body, nil
+}
 
 type ConvertPrometheusApiHandler struct {
 	svc *ConvertPrometheusSrv
@@ -42,7 +66,7 @@ func (f *ConvertPrometheusApiHandler) handleRouteConvertPrometheusGetRuleGroup(c
 }
 
 func (f *ConvertPrometheusApiHandler) handleRouteConvertPrometheusPostRuleGroup(ctx *contextmodel.ReqContext, namespaceTitle string) response.Response {
-	body, err := io.ReadAll(ctx.Req.Body)
+	body, err := readConvertPrometheusBody(ctx, maxConvertPrometheusRequestBodyBytes)
 	if err != nil {
 		return errorToResponse(err)
 	}
