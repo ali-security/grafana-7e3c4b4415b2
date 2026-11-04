@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	lru "github.com/hashicorp/golang-lru/v2/expirable"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/grafana/pkg/setting"
@@ -23,14 +24,14 @@ func TestAvatar_AvatarRetrieval(t *testing.T) {
 	mockServer := setupMockGravatarServer(&callCounter, false)
 
 	t.Cleanup(func() {
-		avc.cache.Flush()
+		avc.cache.Purge()
 		mockServer.Close()
 	})
 
 	av := avc.getAvatarForHash(DEFAULT_NONSENSE_HASH, mockServer.URL+"/avatar/")
 	// verify there was a call to get the image and a call to the 404 fallback
 	require.Equal(t, callCounter, 2)
-	require.Equal(t, av.data.Bytes(), NONSENSE_BODY)
+	require.Equal(t, av.data, NONSENSE_BODY)
 
 	avc.getAvatarForHash(DEFAULT_NONSENSE_HASH, mockServer.URL+"/avatar/")
 	//since the avatar is cached, there should not have been anymore REST calls
@@ -43,7 +44,7 @@ func TestAvatar_CheckCustom(t *testing.T) {
 	mockServer := setupMockGravatarServer(&callCounter, false)
 
 	t.Cleanup(func() {
-		avc.cache.Flush()
+		avc.cache.Purge()
 		mockServer.Close()
 	})
 
@@ -62,7 +63,7 @@ func TestAvatar_FallbackCase(t *testing.T) {
 	mockServer := setupMockGravatarServer(&callCounter, true)
 
 	t.Cleanup(func() {
-		avc.cache.Flush()
+		avc.cache.Purge()
 		mockServer.Close()
 	})
 
@@ -77,21 +78,23 @@ func TestAvatar_FallbackCase(t *testing.T) {
 
 func TestAvatar_ExpirationHandler(t *testing.T) {
 	avc := ProvideAvatarCacheServer(setting.NewCfg())
+	// use a short-lived cache so the entry expires through the cache TTL
+	avc.cache = lru.NewLRU[string, *Avatar](2000, nil, 10*time.Millisecond)
 	callCounter := 0
 	mockServer := setupMockGravatarServer(&callCounter, false)
 
 	t.Cleanup(func() {
-		avc.cache.Flush()
+		avc.cache.Purge()
 		mockServer.Close()
 	})
 
 	av := avc.getAvatarForHash(DEFAULT_NONSENSE_HASH, mockServer.URL+"/avatar/")
 	// verify there was a call to get the image and a call to the 404 fallback
 	require.Equal(t, callCounter, 2)
-	require.Equal(t, av.data.Bytes(), NONSENSE_BODY)
+	require.Equal(t, av.data, NONSENSE_BODY)
 
-	// manually expire the avatar in the cache
-	av.timestamp = av.timestamp.Add(-time.Minute * 15)
+	// wait for the avatar to expire from the cache
+	time.Sleep(50 * time.Millisecond)
 	avc.getAvatarForHash(DEFAULT_NONSENSE_HASH, mockServer.URL+"/avatar/")
 	//since the avatar is expired, there should be two more REST calls
 	require.Equal(t, callCounter, 4)
