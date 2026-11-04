@@ -1,0 +1,36 @@
+name: Seal remote alertmanager
+
+on:
+  push:
+    branches:
+      - 'seal/**'
+
+permissions:
+  contents: read
+
+env:
+  EDITION: 'oss'
+  WIRE_TAGS: 'oss'
+
+jobs:
+  remote-alertmanager:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version-file: go.mod, cache: true }
+      - run: sudo apt-get update && sudo apt-get install -y build-essential shared-mime-info
+      - run: make gen-go
+      - name: Start mimir_backend devenv block
+        run: |
+          cd devenv
+          { echo "services:"; cat docker/blocks/mimir_backend/docker-compose.yaml; } > /tmp/mimir-compose.yaml
+          docker compose -f /tmp/mimir-compose.yaml --project-directory . up -d
+          for i in $(seq 1 60); do curl -sf -u test:test -o /dev/null http://localhost:8080/ready && { echo READY; break; }; sleep 5; done
+          docker compose -f /tmp/mimir-compose.yaml --project-directory . ps
+      - name: Remote alertmanager integration (upstream test-go-integration-alertmanager)
+        run: |
+          set -o pipefail
+          AM_URL=http://localhost:8080 AM_TENANT_ID=test AM_PASSWORD=test go test -v -count=1 -run "^TestIntegrationRemoteAlertmanager" -timeout=5m ./pkg/services/ngalert/... 2>&1 | tee /tmp/am.log | grep -vE '^ok.*no tests to run'
+
