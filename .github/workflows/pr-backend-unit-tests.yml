@@ -1,4 +1,4 @@
-name: Backend Unit Tests
+name: Backend Integration Tests (sqlite, patched areas)
 
 on:
   workflow_dispatch:
@@ -36,8 +36,13 @@ jobs:
       - name: Generate Go code
         run: make gen-go
 
-      - name: Run unit tests
-        run: COVER_OPTS="-coverprofile=be-unit.cov -coverpkg=github.com/grafana/grafana/..." GO_TEST_OUTPUT="/tmp/unit.log" make test-go-unit
+      - name: Run integration tests
+        run: |
+          set -o pipefail
+          go test -count=1 -timeout=60m -run '^TestIntegration' \
+            ./pkg/tests/api/alerting/... ./pkg/tests/api/plugins/... ./pkg/tests/api/dashboards/... \
+            ./pkg/api/... ./pkg/middleware/... ./pkg/services/publicdashboards/... \
+            ./pkg/services/accesscontrol/... ./pkg/services/ngalert/... ./pkg/expr/... 2>&1 | tee /tmp/unit.log
 
       - name: Summarize failures
         if: always()
