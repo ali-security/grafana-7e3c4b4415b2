@@ -740,7 +740,7 @@ func TestDataSourceProxy_routeRule(t *testing.T) {
 						},
 					}
 
-					req, err := http.NewRequestWithContext(t.Context(), "GET", "http://localhost/"+tc.InputPath, nil)
+					req, err := http.NewRequestWithContext(context.Background(), "GET", "http://localhost/"+tc.InputPath, nil)
 					require.NoError(t, err, "failed to create HTTP request")
 					ctx := &contextmodel.ReqContext{
 						Context:      &web.Context{Req: req},
