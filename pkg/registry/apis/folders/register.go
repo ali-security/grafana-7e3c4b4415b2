@@ -2,7 +2,6 @@ package folders
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -18,12 +17,12 @@ import (
 	common "k8s.io/kube-openapi/pkg/common"
 	"k8s.io/kube-openapi/pkg/spec3"
 
-	"github.com/grafana/grafana/pkg/apimachinery/identity"
 	"github.com/grafana/grafana/pkg/apimachinery/utils"
 	"github.com/grafana/grafana/pkg/apis/folder/v0alpha1"
 	grafanaregistry "github.com/grafana/grafana/pkg/apiserver/registry/generic"
 	grafanarest "github.com/grafana/grafana/pkg/apiserver/rest"
 	"github.com/grafana/grafana/pkg/services/accesscontrol"
+	grafanaauthorizer "github.com/grafana/grafana/pkg/services/apiserver/auth/authorizer"
 	"github.com/grafana/grafana/pkg/services/apiserver/builder"
 	"github.com/grafana/grafana/pkg/services/apiserver/endpoints/request"
 	"github.com/grafana/grafana/pkg/services/dashboards"
@@ -39,9 +38,6 @@ var _ builder.APIGroupValidation = (*FolderAPIBuilder)(nil)
 
 var resourceInfo = v0alpha1.FolderResourceInfo
 
-var errNoUser = errors.New("valid user is required")
-var errNoResource = errors.New("resource name is required")
-
 // This is used just so wire has something unique to return
 type FolderAPIBuilder struct {
 	gv                   schema.GroupVersion
@@ -49,9 +45,7 @@ type FolderAPIBuilder struct {
 	namespacer           request.NamespaceMapper
 	folderSvc            folder.Service
 	folderPermissionsSvc accesscontrol.FolderPermissionsService
-	storage              grafanarest.Storage
-
-	authorizer authorizer.Authorizer
+	storage grafanarest.Storage
 
 	searcher     resource.ResourceIndexClient
 	cfg          *setting.Cfg
@@ -80,9 +74,8 @@ func RegisterAPIService(cfg *setting.Cfg,
 		namespacer:           request.GetNamespaceMapper(cfg),
 		folderSvc:            folderSvc,
 		folderPermissionsSvc: folderPermissionsSvc,
-		cfg:                  cfg,
-		authorizer:           newLegacyAuthorizer(accessControl),
-		searcher:             unified,
+		cfg:      cfg,
+		searcher: unified,
 	}
 	apiregistration.RegisterAPI(builder)
 	return builder
@@ -92,7 +85,6 @@ func NewAPIService(ac authtypes.AccessClient) *FolderAPIBuilder {
 	return &FolderAPIBuilder{
 		gv:           resourceInfo.GroupVersion(),
 		namespacer:   request.GetNamespaceMapper(nil),
-		authorizer:   newMultiTenantAuthorizer(ac),
 		ignoreLegacy: true,
 	}
 }
@@ -198,13 +190,9 @@ func (b *FolderAPIBuilder) PostProcessOpenAPI(oas *spec3.OpenAPI) (*spec3.OpenAP
 	return oas, nil
 }
 
-type authorizerParams struct {
-	user      identity.Requester
-	evaluator accesscontrol.Evaluator
-}
-
+// The default authorizer is fine because authorization happens in storage where we know the parent folder
 func (b *FolderAPIBuilder) GetAuthorizer() authorizer.Authorizer {
-	return b.authorizer
+	return grafanaauthorizer.NewServiceAuthorizer()
 }
 
 var folderValidationRules = struct {

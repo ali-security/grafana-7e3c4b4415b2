@@ -13,6 +13,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apiserver/pkg/admission"
+	"k8s.io/apiserver/pkg/authorization/authorizer"
 	"k8s.io/apiserver/pkg/registry/rest"
 	genericapiserver "k8s.io/apiserver/pkg/server"
 	"k8s.io/kube-openapi/pkg/common"
@@ -51,6 +52,7 @@ var (
 	_ builder.APIGroupVersionsProvider = (*DashboardsAPIBuilder)(nil)
 	_ builder.OpenAPIPostProcessor     = (*DashboardsAPIBuilder)(nil)
 	_ builder.APIGroupRouteProvider    = (*DashboardsAPIBuilder)(nil)
+	_ builder.APIGroupAuthorizer       = (*DashboardsAPIBuilder)(nil)
 )
 
 // This is used just so wire has something unique to return
@@ -331,4 +333,9 @@ func (b *DashboardsAPIBuilder) PostProcessOpenAPI(oas *spec3.OpenAPI) (*spec3.Op
 func (b *DashboardsAPIBuilder) GetAPIRoutes() *builder.APIRoutes {
 	defs := b.GetOpenAPIDefinitions()(func(path string) spec.Ref { return spec.Ref{} })
 	return b.search.GetAPIRoutes(defs)
+}
+
+// The default authorizer is fine because authorization happens in storage where we know the parent folder
+func (b *DashboardsAPIBuilder) GetAuthorizer() authorizer.Authorizer {
+	return GetAuthorizer(b.dashboardService, b.log)
 }

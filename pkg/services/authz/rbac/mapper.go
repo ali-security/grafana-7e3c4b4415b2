@@ -55,7 +55,8 @@ type mapper map[string]map[string]translation
 func newMapper() mapper {
 	return map[string]map[string]translation{
 		"dashboard.grafana.app": {
-			"dashboards": newResourceTranslation("dashboards", "uid", true),
+			"dashboards":    newResourceTranslation("dashboards", "uid", true),
+			"librarypanels": newResourceTranslation("library.panels", "uid", true),
 		},
 		"folder.grafana.app": {
 			"folders": newResourceTranslation("folders", "uid", true),
