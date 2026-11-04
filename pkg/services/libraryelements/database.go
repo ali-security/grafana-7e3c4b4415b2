@@ -580,6 +580,29 @@ func (l *LibraryElementService) handleFolderIDPatches(ctx context.Context, eleme
 		toFolderID = fromFolderID
 	}
 
+	if l.features.IsEnabled(ctx, featuremgmt.FlagLibraryPanelRBAC) && toFolderID != fromFolderID {
+		// CVE-2026-81842: the route-level guard only checks library.panels:write on the
+		// element itself, so a caller with edit rights on the element could relocate it
+		// into any folder. The destination folder must allow creating library panels.
+		destFolderUID := ac.GeneralFolderUID
+		if toFolderID != 0 {
+			// nolint:staticcheck
+			f, err := l.folderService.Get(ctx, &folder.GetFolderQuery{OrgID: user.GetOrgID(), ID: &toFolderID, SignedInUser: user})
+			if err != nil {
+				return err
+			}
+			destFolderUID = f.UID
+		}
+		allowed, err := l.AccessControl.Evaluate(ctx, user,
+			ac.EvalPermission(ActionLibraryPanelsCreate, dashboards.ScopeFoldersProvider.GetResourceScopeUID(destFolderUID)))
+		if err != nil {
+			return err
+		}
+		if !allowed {
+			return dashboards.ErrFolderAccessDenied
+		}
+	}
+
 	if !l.features.IsEnabled(ctx, featuremgmt.FlagLibraryPanelRBAC) {
 		// FolderID was provided in the PATCH request
 		if toFolderID != -1 && toFolderID != fromFolderID {
