@@ -2,7 +2,7 @@ import { css, cx } from '@emotion/css';
 import { AnchorHTMLAttributes, ButtonHTMLAttributes } from 'react';
 import * as React from 'react';
 
-import { GrafanaTheme2, ThemeRichColor } from '@grafana/data';
+import { GrafanaTheme2, textUtil, ThemeRichColor } from '@grafana/data';
 
 import { useTheme2 } from '../../themes';
 import { getFocusStyles, getMouseFocusStyles } from '../../themes/mixins';
@@ -125,10 +125,13 @@ export const LinkButton = React.forwardRef<HTMLAnchorElement, ButtonLinkProps>(
       disabled,
       tooltip,
       tooltipPlacement,
+      href,
       ...otherProps
     },
     ref
   ) => {
+    const sanitizedHref = href ? textUtil.sanitizeUrl(href) : href;
+
     const theme = useTheme2();
     const styles = getButtonStyles({
       theme,
@@ -154,6 +157,7 @@ export const LinkButton = React.forwardRef<HTMLAnchorElement, ButtonLinkProps>(
       <a
         className={linkButtonStyles}
         {...otherProps}
+        href={sanitizedHref}
         tabIndex={disabled ? -1 : 0}
         aria-disabled={disabled}
         ref={tooltip ? undefined : ref}
