@@ -1,0 +1,74 @@
+name: Seal extra suites (cache, remote alertmanager, wide jest)
+
+on:
+  push:
+    branches:
+      - 'seal/**'
+
+permissions:
+  contents: read
+
+env:
+  EDITION: 'oss'
+  WIRE_TAGS: 'oss'
+
+jobs:
+  cache:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    services:
+      redis:
+        image: redis:6.2.11
+        ports: ['6379:6379']
+      memcached:
+        image: memcached:1.6.9
+        ports: ['11211:11211']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version-file: go.mod, cache: true }
+      - run: sudo apt-get update && sudo apt-get install -y build-essential shared-mime-info
+      - run: make gen-go
+      - name: redis + memcached integration (upstream test-go-integration-redis / -memcached)
+        run: |
+          set -o pipefail
+          PKGS=$(find ./pkg -type f -name '*_test.go' -exec grep -l '^func TestIntegration' '{}' '+' | grep -o '\(.*\)/' | sort -u)
+          REDIS_URL=localhost:6379 go test -v -count=1 -run IntegrationRedis -timeout=2m $PKGS 2>&1 | tee /tmp/redis.log | grep -E '^(=== RUN|--- |ok|FAIL)' | grep -v '^ok.*no tests' 
+          MEMCACHED_HOSTS=localhost:11211 go test -v -count=1 -run IntegrationMemcached -timeout=2m $PKGS 2>&1 | tee /tmp/memcached.log | grep -E '^(=== RUN|--- |ok|FAIL)' | grep -v '^ok.*no tests'
+
+  remote-alertmanager:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version-file: go.mod, cache: true }
+      - run: sudo apt-get update && sudo apt-get install -y build-essential shared-mime-info
+      - run: make gen-go
+      - name: Start mimir_backend devenv block
+        run: |
+          cd devenv
+          { echo "services:"; cat docker/blocks/mimir_backend/docker-compose.yaml; } > /tmp/mimir-compose.yaml
+          docker compose -f /tmp/mimir-compose.yaml --project-directory . up -d
+          for i in $(seq 1 60); do curl -sf -o /dev/null http://localhost:8080/ready && break; curl -s -o /dev/null -w '%{http_code}\n' http://localhost:8080/ || true; sleep 5; done
+          docker compose -f /tmp/mimir-compose.yaml --project-directory . ps
+      - name: Remote alertmanager integration (upstream test-go-integration-alertmanager)
+        run: |
+          set -o pipefail
+          AM_URL=http://localhost:8080 AM_TENANT_ID=test go test -v -count=1 -run "^TestIntegrationRemoteAlertmanager" -timeout=5m ./pkg/services/ngalert/... 2>&1 | tee /tmp/am.log | grep -E '^(=== RUN|--- |ok|FAIL)' | grep -v '^ok.*no tests'
+
+  jest-wide:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version-file: '.nvmrc' }
+      - run: corepack enable && yarn install --immutable
+      - name: Jest — all of grafana-ui + every suite that renders LinkButton + touched panels/dashboards
+        run: |
+          FILES=$( (grep -rlE 'LinkButton' --include='*.test.tsx' --include='*.test.ts' public packages; \
+                    find packages/grafana-ui -name '*.test.ts*') | sort -u)
+          echo "$FILES" | wc -l
+          yarn jest --ci --watchAll=false $FILES \
+            public/app/plugins/panel/xychart public/app/features/dashboard/dashgrid public/app/features/dashboard-scene/serialization
