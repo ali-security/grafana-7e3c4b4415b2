@@ -1,4 +1,4 @@
-name: Backend Integration Tests (sqlite, patched areas)
+name: Backend Integration Tests (sqlite, full)
 
 on:
   workflow_dispatch:
@@ -17,6 +17,7 @@ jobs:
   backend-testing-coverage:
     name: Backend Testing & Coverage
     runs-on: ubuntu-latest
+    timeout-minutes: 300
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -39,10 +40,7 @@ jobs:
       - name: Run integration tests
         run: |
           set -o pipefail
-          go test -count=1 -timeout=60m -run '^TestIntegration' \
-            ./pkg/tests/api/alerting/... ./pkg/tests/api/plugins/... ./pkg/tests/api/dashboards/... \
-            ./pkg/api/... ./pkg/middleware/... ./pkg/services/publicdashboards/... \
-            ./pkg/services/accesscontrol/... ./pkg/services/ngalert/... ./pkg/expr/... 2>&1 | tee /tmp/unit.log
+          go test -count=1 -timeout=90m -run '^TestIntegration' ./pkg/... 2>&1 | tee /tmp/unit.log
 
       - name: Summarize failures
         if: always()
