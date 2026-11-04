@@ -28,19 +28,14 @@ import (
 	dashboardv2alpha1 "github.com/grafana/grafana/pkg/apis/dashboard/v2alpha1"
 	grafanaregistry "github.com/grafana/grafana/pkg/apiserver/registry/generic"
 	"github.com/grafana/grafana/pkg/infra/db"
-	"github.com/grafana/grafana/pkg/infra/log"
 	"github.com/grafana/grafana/pkg/infra/tracing"
-	"github.com/grafana/grafana/pkg/registry/apis/dashboard/legacy"
-	"github.com/grafana/grafana/pkg/registry/apis/dashboard/legacysearcher"
 	"github.com/grafana/grafana/pkg/services/accesscontrol"
 	"github.com/grafana/grafana/pkg/services/apiserver/builder"
-	"github.com/grafana/grafana/pkg/services/apiserver/endpoints/request"
 	"github.com/grafana/grafana/pkg/services/dashboards"
 	"github.com/grafana/grafana/pkg/services/featuremgmt"
 	"github.com/grafana/grafana/pkg/services/provisioning"
 	"github.com/grafana/grafana/pkg/services/search/sort"
 	"github.com/grafana/grafana/pkg/setting"
-	"github.com/grafana/grafana/pkg/storage/legacysql"
 	"github.com/grafana/grafana/pkg/storage/legacysql/dualwrite"
 	"github.com/grafana/grafana/pkg/storage/unified/apistore"
 	"github.com/grafana/grafana/pkg/storage/unified/resource"
@@ -55,8 +50,7 @@ var (
 
 // This is used just so wire has something unique to return
 type DashboardsAPIBuilder struct {
-	dashboardService dashboards.DashboardService
-	features         featuremgmt.FeatureToggles
+	features featuremgmt.FeatureToggles
 
 	accessControl                accesscontrol.AccessControl
 	legacy                       *DashboardStorage
@@ -65,7 +59,6 @@ type DashboardsAPIBuilder struct {
 	scheme                       *runtime.Scheme
 	search                       *SearchHandler
 
-	log log.Logger
 	reg prometheus.Registerer
 }
 
@@ -73,7 +66,6 @@ func RegisterAPIService(
 	cfg *setting.Cfg,
 	features featuremgmt.FeatureToggles,
 	apiregistration builder.APIRegistrar,
-	dashboardService dashboards.DashboardService,
 	provisioningDashboardService dashboards.DashboardProvisioningService,
 	accessControl accesscontrol.AccessControl,
 	provisioning provisioning.ProvisioningService,
@@ -85,7 +77,8 @@ func RegisterAPIService(
 	dual dualwrite.Service,
 	sorter sort.Service,
 ) *DashboardsAPIBuilder {
-	softDelete := features.IsEnabledGlobally(featuremgmt.FlagDashboardRestore)
+	// disable dashboard api in 11.6
+	/* softDelete := features.IsEnabledGlobally(featuremgmt.FlagDashboardRestore)
 	dbp := legacysql.NewDatabaseProvider(sql)
 	namespacer := request.GetNamespaceMapper(cfg)
 	legacyDashboardSearcher := legacysearcher.NewDashboardSearchClient(dashStore, sorter)
@@ -105,7 +98,8 @@ func RegisterAPIService(
 		reg: reg,
 	}
 	apiregistration.RegisterAPI(builder)
-	return builder
+	return builder*/
+	return nil
 }
 
 func (b *DashboardsAPIBuilder) GetGroupVersions() []schema.GroupVersion {
