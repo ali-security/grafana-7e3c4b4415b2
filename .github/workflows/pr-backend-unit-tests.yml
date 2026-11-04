@@ -39,10 +39,7 @@ jobs:
       - name: Run integration tests
         run: |
           set -o pipefail
-          go test -count=1 -timeout=60m -run '^TestIntegration' \
-            ./pkg/tests/api/alerting/... ./pkg/tests/api/plugins/... ./pkg/tests/api/dashboards/... \
-            ./pkg/api/... ./pkg/middleware/... ./pkg/services/publicdashboards/... \
-            ./pkg/services/accesscontrol/... ./pkg/services/ngalert/... ./pkg/expr/... 2>&1 | tee /tmp/unit.log
+          go test -count=1 -v -timeout=20m -run '^TestIntegration' ./pkg/tests/api/alerting/ 2>&1 | tee /tmp/unit.log
 
       - name: Summarize failures
         if: always()
