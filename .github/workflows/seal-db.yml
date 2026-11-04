@@ -1,0 +1,91 @@
+name: Seal DB integration + frontend tests
+
+on:
+  push:
+    branches:
+      - 'seal/**'
+
+permissions:
+  contents: read
+
+env:
+  EDITION: 'oss'
+  WIRE_TAGS: 'oss'
+
+jobs:
+  postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    services:
+      postgres:
+        image: postgres:13
+        env:
+          POSTGRES_USER: grafanatest
+          POSTGRES_PASSWORD: grafanatest
+          POSTGRES_DB: grafanatest
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U grafanatest" --health-interval 5s --health-timeout 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: sudo apt-get update && sudo apt-get install -y build-essential shared-mime-info
+      - run: make gen-go
+      - name: Run postgres integration tests (upstream test-go-integration-postgres)
+        run: |
+          set -o pipefail
+          PKGS=$(find ./pkg -type f -name '*_test.go' -exec grep -l '^func TestIntegration' '{}' '+' | grep -o '\(.*\)/' | sort -u)
+          GRAFANA_TEST_DB=postgres POSTGRES_HOST=localhost go test -p=1 -count=1 -run "^TestIntegration" -timeout=10m $PKGS 2>&1 | tee /tmp/db.log
+      - if: always()
+        run: grep -E '^(--- FAIL|FAIL|panic:)' /tmp/db.log | head -200 || true
+
+  mysql:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: rootpass
+          MYSQL_DATABASE: grafana_tests
+          MYSQL_USER: grafana
+          MYSQL_PASSWORD: password
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -prootpass" --health-interval 5s --health-timeout 5s --health-retries 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: sudo apt-get update && sudo apt-get install -y build-essential shared-mime-info
+      - run: make gen-go
+      - name: Run mysql integration tests (upstream test-go-integration-mysql)
+        run: |
+          set -o pipefail
+          PKGS=$(find ./pkg -type f -name '*_test.go' -exec grep -l '^func TestIntegration' '{}' '+' | grep -o '\(.*\)/' | sort -u)
+          GRAFANA_TEST_DB=mysql MYSQL_HOST=127.0.0.1 go test -p=1 -count=1 -run "^TestIntegration" -timeout=10m $PKGS 2>&1 | tee /tmp/db.log
+      - if: always()
+        run: grep -E '^(--- FAIL|FAIL|panic:)' /tmp/db.log | head -200 || true
+
+  jest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+      - run: corepack enable && yarn install --immutable
+      - name: Jest on frontend dirs touched by the seal patches
+        run: |
+          yarn jest --ci --watchAll=false \
+            packages/grafana-ui/src/components/Button \
+            packages/grafana-ui/src/components/Link \
+            public/app/plugins/panel/xychart \
+            public/app/features/dashboard/dashgrid \
+            public/app/features/dashboard-scene/serialization
