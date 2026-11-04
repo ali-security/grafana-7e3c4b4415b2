@@ -273,13 +273,13 @@ func (s *SocialGitlab) extractFromToken(ctx context.Context, client *http.Client
 
 	idToken := token.Extra("id_token")
 	if idToken == nil {
-		s.log.Debug("No id_token found, defaulting to API access", "token", token)
+		s.log.Debug("No id_token found, defaulting to API access")
 		return nil, nil
 	}
 
 	rawJSON, err := s.retrieveRawIDToken(idToken)
 	if err != nil {
-		s.log.Warn("Error retrieving id_token", "error", err, "token", fmt.Sprintf("%+v", idToken))
+		s.log.Warn("Error retrieving id_token", "error", err)
 		return nil, nil
 	}
 
