@@ -1,0 +1,31 @@
+name: Seal full Jest (8 shards)
+
+on:
+  push:
+    branches:
+      - 'seal/**'
+
+permissions:
+  contents: read
+
+jobs:
+  jest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version-file: '.nvmrc' }
+      - run: corepack enable && yarn install --immutable
+      - name: Full Jest suite, shard ${{ matrix.shard }}/8 (upstream frontend-unit-tests.yml)
+        run: yarn run test:ci 2>&1 | tee /tmp/jest.log; exit ${PIPESTATUS[0]}
+        env:
+          TEST_SHARD: ${{ matrix.shard }}
+          TEST_SHARD_TOTAL: 8
+          TEST_MAX_WORKERS: 4
+      - if: always()
+        run: grep -E "^(Tests:|Test Suites:|  ● )" /tmp/jest.log | head -60 || true
