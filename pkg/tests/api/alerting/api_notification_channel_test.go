@@ -2146,8 +2146,10 @@ var expAlertmanagerConfigFromAPI = `
             "name": "dingding_test",
             "type": "dingding",
             "disableResolveMessage": false,
-            "settings": {},
-            "secureFields": {"url": true}
+            "settings": {
+              "url": "http://CHANNEL_ADDR/dingding_recv/dingding_test"
+            },
+            "secureFields": {}
           }
         ]
       },

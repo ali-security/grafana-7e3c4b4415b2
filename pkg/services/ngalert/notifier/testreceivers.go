@@ -23,17 +23,12 @@ func (am *alertmanager) TestReceivers(ctx context.Context, c apimodels.TestRecei
 				SecureSettings:        gr.SecureSettings,
 			})
 		}
-		recv := &alertingNotify.APIReceiver{
+		receivers = append(receivers, &alertingNotify.APIReceiver{
 			ConfigReceiver: r.Receiver,
 			GrafanaIntegrations: alertingNotify.GrafanaIntegrations{
 				Integrations: integrations,
 			},
-		}
-		err := patchNewSecureFields(ctx, recv, alertingNotify.DecodeSecretsFromBase64, am.decryptFn)
-		if err != nil {
-			return nil, 0, err
-		}
-		receivers = append(receivers, recv)
+		})
 	}
 	var alert *alertingNotify.TestReceiversConfigAlertParams
 	if c.Alert != nil {
